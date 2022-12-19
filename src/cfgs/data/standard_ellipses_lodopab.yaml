@@ -21,4 +21,4 @@ noise_specs:
   stddev: 0.05
 implicit_scaling_except_for_test_data: 1.
 fbp_filter_type: 'Hann'
-fbp_frequency_scaling: 1.
+fbp_frequency_scaling: 0.6
