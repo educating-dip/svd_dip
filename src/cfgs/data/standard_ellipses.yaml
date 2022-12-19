@@ -12,6 +12,7 @@ geometry_specs:
   det_radius: 500
   num_angles: 600
   impl: astra_cuda
+  type: cone
 noise_specs:
   noise_type: white
   stddev: 0.05

@@ -1,8 +1,10 @@
+import os
 from functools import partial
 import odl
 from odl.contrib.torch import OperatorModule
 import torch
 import numpy as np
+import h5py
 from .ellipses import EllipsesDataset, DiskDistributedEllipsesDataset, DiskDistributedNoiseMasksDataset, EllipsoidsInBallDataset
 from .rectangles import RectanglesDataset
 from .pascal_voc import PascalVOCDataset
@@ -182,15 +184,23 @@ def get_ray_trafos(name, cfg, return_torch_module=True):
                     cfg.geometry_specs.ray_trafo_custom.name))
 
     else:
-        space = odl.uniform_discr([-cfg.im_shape / 2, -cfg.im_shape / 2],
-                                  [cfg.im_shape / 2, cfg.im_shape / 2],
+        phys_im_size = cfg.geometry_specs.get('phys_im_size', cfg.im_shape)  # default: 1px = 1 unit
+        space = odl.uniform_discr([-phys_im_size / 2, -phys_im_size / 2],
+                                  [phys_im_size / 2, phys_im_size / 2],
                                   [cfg.im_shape, cfg.im_shape],
                                   dtype='float32')
-        geometry = odl.tomo.cone_beam_geometry(space,
-                src_radius=cfg.geometry_specs.src_radius,
-                det_radius=cfg.geometry_specs.det_radius,
-                num_angles=cfg.geometry_specs.num_angles,
-                det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+        if cfg.geometry_specs.type == 'cone':
+            geometry = odl.tomo.cone_beam_geometry(space,
+                    src_radius=cfg.geometry_specs.src_radius,
+                    det_radius=cfg.geometry_specs.det_radius,
+                    num_angles=cfg.geometry_specs.num_angles,
+                    det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+        elif cfg.geometry_specs.type == 'parallel':
+            geometry = odl.tomo.parallel_beam_geometry(space,
+                    num_angles=cfg.geometry_specs.num_angles,
+                    det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+        else:
+            raise ValueError('Unknown geometry type \'{}\''.format(cfg.geometry_specs.type))
         if 'angles_subsampling' in cfg.geometry_specs:
             raise NotImplementedError
 
@@ -346,6 +356,30 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                 specs_kwargs=specs_kwargs,
                 noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
                 'test': cfg.seed + 2})
+    elif name == 'ellipses_lodopab':
+        dataset_specs = {'image_size': cfg.im_shape, 'train_len': cfg.train_len,
+                         'validation_len': cfg.validation_len, 'test_len': cfg.test_len}
+        image_dataset = EllipsesDataset(**dataset_specs, **image_dataset_kwargs)
+        phys_im_size = cfg.geometry_specs.get(
+                'phys_im_size', cfg.im_shape)  # lodopab cfg. specifies 0.26
+        space = odl.uniform_discr([-phys_im_size/2,] * 2, [phys_im_size/2,] * 2,
+                (cfg.im_shape,) * 2, dtype=np.float32)
+        if 'angles_subsampling' in cfg.geometry_specs:
+            raise NotImplementedError
+        geometry = odl.tomo.parallel_beam_geometry(
+                space,
+                num_angles=cfg.geometry_specs.num_angles,
+                det_shape=(cfg.geometry_specs.num_det_pixels,))
+        proj_space = odl.uniform_discr(
+                geometry.partition.min_pt, geometry.partition.max_pt,
+                (cfg.geometry_specs.num_angles, cfg.geometry_specs.num_det_pixels), dtype=np.float32)
+        dataset = image_dataset.create_pair_dataset(ray_trafo=ray_trafo,
+                pinv_ray_trafo=smooth_pinv_ray_trafo,
+                domain=space, proj_space=proj_space,
+                noise_type=cfg.noise_specs.noise_type,
+                specs_kwargs=specs_kwargs,
+                noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
+                'test': cfg.seed + 2})
     else:
         raise NotImplementedError
 
@@ -380,6 +414,11 @@ def get_test_data(name, cfg, return_torch_dataset=True):
         ground_truth_array = ground_truth[None]
     elif cfg.test_data == 'walnut_3d':
         sinogram, fbp, ground_truth = get_walnut_3d_data(name, cfg)
+        sinogram_array = sinogram[None]
+        fbp_array = fbp[None]  # FDK, actually
+        ground_truth_array = ground_truth[None]
+    elif cfg.test_data == 'lodopab':
+        sinogram, fbp, ground_truth = get_lodopab_data(name, cfg)
         sinogram_array = sinogram[None]
         fbp_array = fbp[None]  # FDK, actually
         ground_truth_array = ground_truth[None]
@@ -546,6 +585,33 @@ def get_walnut_3d_data(name, cfg):
             walnut_id=cfg.walnut_id, orbit_id=cfg.orbit_id)
     ground_truth = walnuts.down_sample_vol(ground_truth_orig_res,
             down_sampling=cfg.vol_down_sampling)
+
+    return sinogram, fbp, ground_truth
+
+
+def get_lodopab_data(name, cfg):
+
+    ray_trafos = get_ray_trafos(name, cfg,
+                                return_torch_module=False)
+    smooth_pinv_ray_trafo = ray_trafos['smooth_pinv_ray_trafo']
+
+    NUM_SAMPLES_PER_FILE = 128
+    file_index = cfg.sample_index // NUM_SAMPLES_PER_FILE
+    index_in_file = cfg.sample_index % NUM_SAMPLES_PER_FILE
+
+    with h5py.File(
+            os.path.join(cfg.data_path_test,
+                         'observation_{}_{:03d}.hdf5'
+                         .format(cfg.data_part, file_index)), 'r') as file:
+        sinogram = file['data'][index_in_file]
+
+    fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
+
+    with h5py.File(
+            os.path.join(cfg.data_path_test,
+                         'ground_truth_{}_{:03d}.hdf5'
+                         .format(cfg.data_part, file_index)), 'r') as file:
+        ground_truth = file['data'][index_in_file]
 
     return sinogram, fbp, ground_truth
 
