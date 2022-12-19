@@ -195,14 +195,26 @@ def get_ray_trafos(name, cfg, return_torch_module=True):
                     det_radius=cfg.geometry_specs.det_radius,
                     num_angles=cfg.geometry_specs.num_angles,
                     det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+            if 'angles_subsampling' in cfg.geometry_specs:
+                raise NotImplementedError
         elif cfg.geometry_specs.type == 'parallel':
-            geometry = odl.tomo.parallel_beam_geometry(space,
-                    num_angles=cfg.geometry_specs.num_angles,
-                    det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+            if 'angles_subsampling' not in cfg.geometry_specs:
+                geometry = odl.tomo.parallel_beam_geometry(space,
+                        num_angles=cfg.geometry_specs.num_angles,
+                        det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+            else:
+                orig_geometry = odl.tomo.parallel_beam_geometry(space,
+                        num_angles=cfg.geometry_specs.angles_subsampling.num_angles_orig,
+                        det_shape=cfg.geometry_specs.get('num_det_pixels', None))
+                geometry = odl.tomo.Parallel2dGeometry(
+                        apart=odl.nonuniform_partition(orig_geometry.angles[
+                                cfg.geometry_specs.angles_subsampling.get('start'):
+                                cfg.geometry_specs.angles_subsampling.get('stop'):
+                                cfg.geometry_specs.angles_subsampling.get('step')]),
+                        dpart=orig_geometry.det_partition)
+                assert len(geometry.angles) == cfg.geometry_specs.num_angles
         else:
             raise ValueError('Unknown geometry type \'{}\''.format(cfg.geometry_specs.type))
-        if 'angles_subsampling' in cfg.geometry_specs:
-            raise NotImplementedError
 
         ray_trafo = odl.tomo.RayTransform(space, geometry,
                 impl=cfg.geometry_specs.impl)
@@ -356,7 +368,8 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                 specs_kwargs=specs_kwargs,
                 noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
                 'test': cfg.seed + 2})
-    elif name == 'ellipses_lodopab':
+    elif name in ['ellipses_lodopab', 'ellipses_lodopab_200']:
+        # see https://github.com/jleuschn/dival/blob/483915b2e64c1ad6355311da0429ef8f2c2eceb5/dival/datasets/lodopab_dataset.py#L78
         dataset_specs = {'image_size': cfg.im_shape, 'train_len': cfg.train_len,
                          'validation_len': cfg.validation_len, 'test_len': cfg.test_len}
         image_dataset = EllipsesDataset(**dataset_specs, **image_dataset_kwargs)
@@ -364,15 +377,24 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                 'phys_im_size', cfg.im_shape)  # lodopab cfg. specifies 0.26
         space = odl.uniform_discr([-phys_im_size/2,] * 2, [phys_im_size/2,] * 2,
                 (cfg.im_shape,) * 2, dtype=np.float32)
-        if 'angles_subsampling' in cfg.geometry_specs:
-            raise NotImplementedError
-        geometry = odl.tomo.parallel_beam_geometry(
+        orig_geometry = odl.tomo.parallel_beam_geometry(
                 space,
                 num_angles=cfg.geometry_specs.num_angles,
                 det_shape=(cfg.geometry_specs.num_det_pixels,))
-        proj_space = odl.uniform_discr(
-                geometry.partition.min_pt, geometry.partition.max_pt,
-                (cfg.geometry_specs.num_angles, cfg.geometry_specs.num_det_pixels), dtype=np.float32)
+        if name == 'ellipses_lodopab':
+            geometry = orig_geometry
+            proj_space = odl.uniform_discr(
+                    geometry.partition.min_pt, geometry.partition.max_pt,
+                    (cfg.geometry_specs.num_angles, cfg.geometry_specs.num_det_pixels), dtype=np.float32)
+        elif name == 'ellipses_lodopab_200':
+            # cf. https://github.com/oterobaguer/dip-ct-benchmark/blob/0539c284c94089ed86421ea0892cd68aa1d0575a/dliplib/utils/helper.py#L185
+            geometry = odl.tomo.Parallel2dGeometry(
+                    apart=odl.nonuniform_partition(orig_geometry.angles[
+                            cfg.geometry_specs.angles_subsampling.start:
+                            cfg.geometry_specs.angles_subsampling.stop:
+                            cfg.geometry_specs.angles_subsampling.step]),  # lodopab_200 cfg. specifies range(0, 1000, 5)
+                    dpart=orig_geometry.det_partition)
+            proj_space = ray_trafo.range
         dataset = image_dataset.create_pair_dataset(ray_trafo=ray_trafo,
                 pinv_ray_trafo=smooth_pinv_ray_trafo,
                 domain=space, proj_space=proj_space,
@@ -595,6 +617,8 @@ def get_lodopab_data(name, cfg):
                                 return_torch_module=False)
     smooth_pinv_ray_trafo = ray_trafos['smooth_pinv_ray_trafo']
 
+    angles_subsampling = cfg.geometry_specs.get('angles_subsampling', {})
+
     NUM_SAMPLES_PER_FILE = 128
     file_index = cfg.sample_index // NUM_SAMPLES_PER_FILE
     index_in_file = cfg.sample_index % NUM_SAMPLES_PER_FILE
@@ -603,7 +627,10 @@ def get_lodopab_data(name, cfg):
             os.path.join(cfg.data_path_test,
                          'observation_{}_{:03d}.hdf5'
                          .format(cfg.data_part, file_index)), 'r') as file:
-        sinogram = file['data'][index_in_file]
+        sinogram = file['data'][index_in_file][
+                angles_subsampling.get('start'):
+                angles_subsampling.get('stop'):
+                angles_subsampling.get('step')]
 
     fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
 
