@@ -1,5 +1,5 @@
 # @package _group_
-name: ellipses_lodopab
+name: ellipses_lodopab_200
 validation_data: shepp_logan
 test_data: lodopab
 im_shape: 362
