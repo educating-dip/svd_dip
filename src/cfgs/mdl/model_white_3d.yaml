@@ -29,6 +29,7 @@ optim:
   iterations: 30000
   loss_function: mse
   gamma: 1e-1
+  use_radam: False
 return_iterates_selection:
   mode: 'standard_sequence'
   manual_iters: null

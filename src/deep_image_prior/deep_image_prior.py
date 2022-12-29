@@ -391,8 +391,9 @@ class DeepImagePriorReconstructor():
         Initialize the optimizer.
         """
 
+        optim_cls = torch.optim.RAdam if self.cfg.optim.use_radam else torch.optim.Adam
         self._optimizer = \
-            torch.optim.Adam([{'params': extract_learnable_params(self.model,
+            optim_cls([{'params': extract_learnable_params(self.model,
                              ['down', 'inc']),
                              'lr': self.cfg.optim.encoder.lr},
                              {'params': extract_learnable_params(self.model,

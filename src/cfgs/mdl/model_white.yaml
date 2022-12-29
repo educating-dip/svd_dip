@@ -23,6 +23,7 @@ optim:
   gamma: 1e-4
   photons_per_pixel: null
   mu_max: null
+  use_radam: False
 return_iterates_selection:
   mode: 'standard_sequence'
   manual_iters: null

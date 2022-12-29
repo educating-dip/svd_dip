@@ -611,7 +611,7 @@ def get_walnut_3d_data(name, cfg):
     return sinogram, fbp, ground_truth
 
 
-def get_lodopab_data(name, cfg):
+def get_lodopab_data(name, cfg, base_seed=100):
 
     ray_trafos = get_ray_trafos(name, cfg,
                                 return_torch_module=False)
@@ -639,6 +639,13 @@ def get_lodopab_data(name, cfg):
                          'ground_truth_{}_{:03d}.hdf5'
                          .format(cfg.data_part, file_index)), 'r') as file:
         ground_truth = file['data'][index_in_file]
+
+    if cfg.resimulate_with_noise_specs:
+        dataset, _ = get_standard_dataset(
+                name, cfg, return_ray_trafo_torch_module=False)
+        sinogram = dataset.ground_truth_to_obs(
+                ground_truth, random_gen=np.random.default_rng(base_seed + cfg.sample_index))
+        fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
 
     return sinogram, fbp, ground_truth
 
