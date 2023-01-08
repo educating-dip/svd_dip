@@ -105,6 +105,13 @@ def get_ray_trafos(name, cfg, return_torch_module=True):
                     scaling_factor=cfg.fbp_scaling_factor,
                     filter_type=cfg.fbp_filter_type,
                     frequency_scaling=cfg.fbp_frequency_scaling)
+            ray_trafos['pinv_ray_trafo_module'] = get_matrix_fbp_module(
+                    get_matrix_ray_trafo_module(
+                    matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+                    sparse=True, adjoint=True), proj_shape,
+                    scaling_factor=cfg.fbp_scaling_factor,
+                    filter_type='Ram-Lak',
+                    frequency_scaling=1.)
 
     elif cfg.geometry_specs.impl == 'custom':
         custom_cfg = cfg.geometry_specs.ray_trafo_custom

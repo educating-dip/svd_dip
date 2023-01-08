@@ -96,13 +96,15 @@ class DeepImagePriorReconstructor():
            https://doi.org/10.1088/1361-6420/aba415
     """
 
-    def __init__(self, ray_trafo_module, reco_space, observation_space, cfg):
+    def __init__(self, ray_trafo_module, reco_space, observation_space, cfg, smooth_pinv_ray_trafo_module=None, pinv_ray_trafo_module=None):
 
         self.reco_space = reco_space
         self.observation_space = observation_space
         self.cfg = cfg
         self.device = torch.device(('cuda:0' if torch.cuda.is_available() else 'cpu'))
         self.ray_trafo_module = ray_trafo_module.to(self.device)
+        self.smooth_pinv_ray_trafo_module = smooth_pinv_ray_trafo_module.to(self.device) if smooth_pinv_ray_trafo_module is not None else None
+        self.pinv_ray_trafo_module = pinv_ray_trafo_module.to(self.device) if pinv_ray_trafo_module is not None else None
         self.init_model()
 
     def init_model(self):
@@ -252,7 +254,7 @@ class DeepImagePriorReconstructor():
         if self.cfg.use_mixed:
             scaler = GradScaler()
 
-        if self.cfg.optim.loss_function == 'mse':
+        if self.cfg.optim.loss_function in ['mse', 'mse_sure']:
             criterion = MSELoss()
         elif self.cfg.optim.loss_function == 'poisson':
             criterion = partial(poisson_loss,
@@ -295,7 +297,68 @@ class DeepImagePriorReconstructor():
                 self.optimizer.zero_grad()
                 with autocast() if self.cfg.use_mixed else contextlib.nullcontext():
                     output = self.apply_model_on_test_data(self.net_input)
-                    loss = criterion(self.ray_trafo_module(output), y_delta) + self.cfg.optim.gamma * tv_loss_fun(output)
+                    output_y = self.ray_trafo_module(output)
+                    loss = criterion(output_y, y_delta) + self.cfg.optim.gamma * tv_loss_fun(output)
+                    if self.cfg.optim.loss_function == 'mse_sure':
+                        if self.cfg.optim.mse_sure_sigma == 'from_ground_truth':
+                            sigma_ = torch.sqrt(torch.mean((y_delta - self.ray_trafo_module(ground_truth.to(y_delta.device)))**2))
+                        else:
+                            sigma_ = self.cfg.optim.mse_sure_sigma
+                        assert not self.cfg.recon_from_randn
+                        # epsilon = self.cfg.optim.mse_sure_epsilon
+                        # eta = torch.randn_like(y_delta)
+                        # net_input_perturbed = self.smooth_pinv_ray_trafo_module(y_delta.detach().clone() + (eta * epsilon))
+                        # output_y_perturbed = self.ray_trafo_module(self.apply_model_on_test_data(net_input_perturbed))
+                        # dx = output_y_perturbed - output_y
+                        # eta_dx = torch.sum(eta * dx)
+                        # MCdiv = eta_dx / epsilon
+                        # div_term = 2. * sigma_ ** 2 * MCdiv / dx.numel()
+                        # loss = loss + div_term
+                        u = self.net_input.detach().clone()
+                        fu = output
+                        eps = self.cfg.optim.mse_sure_epsilon
+                        sig2 = sigma_ ** 2
+                        N = y_delta.numel()
+                        def P(x):
+                            return self.pinv_ray_trafo_module(self.ray_trafo_module(x))
+                        def div_approx(f):
+                            b = torch.randn_like(u)
+                            m = b.mean()
+                            c = torch.sqrt(torch.mean((b - m) ** 2))
+                            b = (b - m) / c
+                            df = P(f(u + eps * b) - fu)
+                            N_eps = eps * N
+                            MC = torch.mean(torch.sum(b * df / N_eps, dim=(1, 2, 3)), dim=0)
+                            return MC
+                        x_ML = fbp.to(fu.device)
+                        c2 = torch.mean((P(fu)) ** 2)
+                        c3 = sig2 * div_approx(self.apply_model_on_test_data)
+                        c4 = torch.mean(x_ML * fu)
+
+                        eta = c2 - 2 * c4 + 2 * c3
+                        loss = eta
+                        # u = self.net_input.detach().clone()
+                        # fu = output
+                        # eps = self.cfg.optim.mse_sure_epsilon
+                        # sig2 = sigma_ ** 2
+                        # N = y_delta.numel()
+                        # def P(x):
+                        #     return self.pinv_ray_trafo_module(self.ray_trafo_module(x))
+                        # def div_approx(f):
+                        #     b = torch.randn_like(u)
+                        #     m = b.mean()
+                        #     c = torch.sqrt(torch.mean((b - m) ** 2))
+                        #     b = (b - m) / c
+                        #     df = P(f(u + eps * b) - fu)
+                        #     N_eps = eps * N
+                        #     MC = torch.mean(torch.sum(b * df / N_eps, dim=(1, 2, 3)), dim=0)
+                        #     return MC
+                        # c3 = sig2 * div_approx(self.apply_model_on_test_data)
+
+                        # LS = self.ray_trafo_module(fu) - y_delta
+                        # l = torch.mean(HtH_dag_Ht(LS) ** 2)
+                        # eta = l + 2 * c3
+                        # loss = eta
 
                 if i in iterates_params_iters:
                     iterates_params.append(deepcopy(self.model.state_dict()))

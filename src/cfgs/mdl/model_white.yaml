@@ -20,6 +20,8 @@ optim:
     num_warmup_iter: ${mdl.optim.num_warmup_iter}
   iterations: 10000
   loss_function: mse
+  mse_sure_sigma: from_ground_truth
+  mse_sure_epsilon: 1e-3
   gamma: 1e-4
   photons_per_pixel: null
   mu_max: null
