@@ -411,7 +411,7 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                 specs_kwargs=specs_kwargs,
                 noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
                 'test': cfg.seed + 2})
-    elif name == 'lodopab_mayo_200':
+    elif name in ['lodopab_mayo', 'lodopab_mayo_200']:
         # dummy, use pretrained network from https://github.com/oterobaguer/dip-ct-benchmark/
         # see https://github.com/jleuschn/dival/blob/483915b2e64c1ad6355311da0429ef8f2c2eceb5/dival/datasets/lodopab_dataset.py#L78
         dataset_specs = {'image_size': cfg.im_shape, 'train_len': cfg.train_len,
@@ -423,14 +423,20 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                 image_dataset.space,
                 num_angles=cfg.geometry_specs.num_angles,
                 det_shape=(cfg.geometry_specs.num_det_pixels,))
-        # cf. https://github.com/oterobaguer/dip-ct-benchmark/blob/0539c284c94089ed86421ea0892cd68aa1d0575a/dliplib/utils/helper.py#L185
-        geometry = odl.tomo.Parallel2dGeometry(
-                apart=odl.nonuniform_partition(orig_geometry.angles[
-                        cfg.geometry_specs.angles_subsampling.start:
-                        cfg.geometry_specs.angles_subsampling.stop:
-                        cfg.geometry_specs.angles_subsampling.step]),  # lodopab_200 cfg. specifies range(0, 1000, 5)
-                dpart=orig_geometry.det_partition)
-        proj_space = ray_trafo.range
+        if name == 'lodopab_mayo':
+            geometry = orig_geometry
+            proj_space = odl.uniform_discr(
+                    geometry.partition.min_pt, geometry.partition.max_pt,
+                    (cfg.geometry_specs.num_angles, cfg.geometry_specs.num_det_pixels), dtype=np.float32)
+        elif name == 'lodopab_mayo_200':
+            # cf. https://github.com/oterobaguer/dip-ct-benchmark/blob/0539c284c94089ed86421ea0892cd68aa1d0575a/dliplib/utils/helper.py#L185
+            geometry = odl.tomo.Parallel2dGeometry(
+                    apart=odl.nonuniform_partition(orig_geometry.angles[
+                            cfg.geometry_specs.angles_subsampling.start:
+                            cfg.geometry_specs.angles_subsampling.stop:
+                            cfg.geometry_specs.angles_subsampling.step]),  # mayo_200 cfg. specifies range(0, 1000, 5)
+                    dpart=orig_geometry.det_partition)
+            proj_space = ray_trafo.range
         dataset = image_dataset.create_pair_dataset(ray_trafo=ray_trafo,
                 pinv_ray_trafo=smooth_pinv_ray_trafo,
                 domain=image_dataset.space, proj_space=proj_space,
