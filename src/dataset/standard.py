@@ -5,10 +5,12 @@ from odl.contrib.torch import OperatorModule
 import torch
 import numpy as np
 import h5py
+from pydicom.filereader import dcmread
 from .ellipses import EllipsesDataset, DiskDistributedEllipsesDataset, DiskDistributedNoiseMasksDataset, EllipsoidsInBallDataset
 from .rectangles import RectanglesDataset
 from .pascal_voc import PascalVOCDataset
 from .brain import ACRINFMISOBrainDataset
+from .lodopab import LoDoPaBGroundTruthDataset
 from . import lotus
 from . import walnuts
 from util.matrix_ray_trafo import MatrixRayTrafo
@@ -409,6 +411,33 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                 specs_kwargs=specs_kwargs,
                 noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
                 'test': cfg.seed + 2})
+    elif name == 'lodopab_mayo_200':
+        # dummy, use pretrained network from https://github.com/oterobaguer/dip-ct-benchmark/
+        # see https://github.com/jleuschn/dival/blob/483915b2e64c1ad6355311da0429ef8f2c2eceb5/dival/datasets/lodopab_dataset.py#L78
+        dataset_specs = {'image_size': cfg.im_shape, 'train_len': cfg.train_len,
+                         'validation_len': cfg.validation_len, 'test_len': cfg.test_len}
+        phys_im_size = cfg.geometry_specs.get(
+                'phys_im_size', cfg.im_shape)  # lodopab cfg. specifies 0.26
+        image_dataset = LoDoPaBGroundTruthDataset(**dataset_specs, **image_dataset_kwargs, min_pt=[-phys_im_size/2,] * 2, max_pt=[phys_im_size/2,] * 2)
+        orig_geometry = odl.tomo.parallel_beam_geometry(
+                image_dataset.space,
+                num_angles=cfg.geometry_specs.num_angles,
+                det_shape=(cfg.geometry_specs.num_det_pixels,))
+        # cf. https://github.com/oterobaguer/dip-ct-benchmark/blob/0539c284c94089ed86421ea0892cd68aa1d0575a/dliplib/utils/helper.py#L185
+        geometry = odl.tomo.Parallel2dGeometry(
+                apart=odl.nonuniform_partition(orig_geometry.angles[
+                        cfg.geometry_specs.angles_subsampling.start:
+                        cfg.geometry_specs.angles_subsampling.stop:
+                        cfg.geometry_specs.angles_subsampling.step]),  # lodopab_200 cfg. specifies range(0, 1000, 5)
+                dpart=orig_geometry.det_partition)
+        proj_space = ray_trafo.range
+        dataset = image_dataset.create_pair_dataset(ray_trafo=ray_trafo,
+                pinv_ray_trafo=smooth_pinv_ray_trafo,
+                domain=image_dataset.space, proj_space=proj_space,
+                noise_type=cfg.noise_specs.noise_type,
+                specs_kwargs=specs_kwargs,
+                noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
+                'test': cfg.seed + 2})
     else:
         raise NotImplementedError
 
@@ -449,7 +478,12 @@ def get_test_data(name, cfg, return_torch_dataset=True):
     elif cfg.test_data == 'lodopab':
         sinogram, fbp, ground_truth = get_lodopab_data(name, cfg)
         sinogram_array = sinogram[None]
-        fbp_array = fbp[None]  # FDK, actually
+        fbp_array = fbp[None]
+        ground_truth_array = ground_truth[None]
+    elif cfg.test_data == 'mayo':
+        sinogram, fbp, ground_truth = get_mayo_data(name, cfg)
+        sinogram_array = sinogram[None]
+        fbp_array = fbp[None]
         ground_truth_array = ground_truth[None]
     else:
         raise NotImplementedError
@@ -653,6 +687,51 @@ def get_lodopab_data(name, cfg, base_seed=100):
         sinogram = dataset.ground_truth_to_obs(
                 ground_truth, random_gen=np.random.default_rng(base_seed + cfg.sample_index))
         fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
+
+    return sinogram, fbp, ground_truth
+
+def get_mayo_data(name, cfg, base_seed=100):
+
+    ray_trafos = get_ray_trafos(name, cfg,
+                                return_torch_module=False)
+    smooth_pinv_ray_trafo = ray_trafos['smooth_pinv_ray_trafo']
+
+    angles_subsampling = cfg.geometry_specs.get('angles_subsampling', {})
+
+    dirs = os.listdir(os.path.join(cfg.data_path_test, cfg.sample_name))
+    assert len(dirs) == 1
+    full_dose_images_dirs = [d for d in os.listdir(os.path.join(cfg.data_path_test, cfg.sample_name, dirs[0])) if 'Full Dose Images' in d]
+    assert len(full_dose_images_dirs) == 1
+    path = os.path.join(cfg.data_path_test, cfg.sample_name, dirs[0], full_dose_images_dirs[0])
+    dcm_files = os.listdir(path)
+    dcm_files.sort(key=lambda f: float(dcmread(os.path.join(path, f), specific_tags=['SliceLocation'])['SliceLocation'].value))
+    sample_slice = (len(dcm_files) - 1) // 2 if cfg.sample_slice == 'center' else cfg.sample_slice
+    dcm_dataset = dcmread(os.path.join(path, dcm_files[sample_slice]))
+
+    rng = np.random.default_rng((base_seed + hash((cfg.sample_name, sample_slice))) % (2**64))
+
+    # reduce to (362 px)^2 and transpose like in LoDoPaB
+    array = dcm_dataset.pixel_array[75:-75,75:-75].astype(np.float32).T
+    # rescale by dicom meta info
+    array *= dcm_dataset.RescaleSlope
+    array += dcm_dataset.RescaleIntercept
+    array += rng.uniform(0., 1., size=array.shape)
+    # convert values
+    MU_WATER = 20
+    MU_AIR = 0.02
+    MU_MAX = 3071 * (MU_WATER - MU_AIR) / 1000 + MU_WATER
+    array *= (MU_WATER - MU_AIR) / 1000
+    array += MU_WATER
+    array /= MU_MAX
+    np.clip(array, 0., 1., out=array)
+
+    ground_truth = array
+
+    dataset, _ = get_standard_dataset(
+            name, cfg, return_ray_trafo_torch_module=False)
+    sinogram = dataset.ground_truth_to_obs(
+            ground_truth, random_gen=rng)
+    fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
 
     return sinogram, fbp, ground_truth
 

@@ -1,0 +1,30 @@
+# @package _group_
+name: lodopab_mayo_200
+validation_data: shepp_logan
+test_data: mayo
+im_shape: 362
+train_len: 35820
+validation_len: 3522
+test_len: 3553
+data_path_test: null  # insert path to mayo LDCT-and-Projection-data
+sample_name: C001
+sample_slice: center
+seed: 1
+geometry_specs:
+  phys_im_size: 0.26  # for ODL min_pt and max_pt arguments
+  num_angles: 200
+  angles_subsampling:
+    start: 0
+    stop: null
+    step: 5
+    num_angles_orig: 1000
+  num_det_pixels: 513
+  impl: astra_cuda
+  type: parallel
+noise_specs:
+  noise_type: poisson
+  photons_per_pixel: 4096
+  mu_max: 81.35858
+implicit_scaling_except_for_test_data: 1.
+fbp_filter_type: 'Hann'
+fbp_frequency_scaling: 1.
