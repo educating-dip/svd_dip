@@ -6,34 +6,35 @@ from .scale_module import get_scale_modules
 
 def get_unet_model(in_ch=1, out_ch=1, scales=5,
                    channels=(32, 32, 64, 64, 128, 128), use_sigmoid=True,
-                   use_norm=True):
+                   use_norm=True, norm_type='group'):
     assert (1 <= scales <= 6)
     skip_channels = [0, 0, 0, 0, 4, 4]
     return UNet(in_ch=in_ch, out_ch=out_ch, channels=channels[:scales],
                 skip_channels=skip_channels, use_sigmoid=use_sigmoid,
-                use_norm=use_norm)
+                use_norm=use_norm, norm_type=norm_type)
 
 class UNet(nn.Module):
     def __init__(self, in_ch, out_ch, channels, skip_channels,
-                 use_sigmoid=True, use_norm=True,
+                 use_sigmoid=True, use_norm=True, norm_type='group',
                  use_scale_in_layer=False, use_scale_out_layer=False,
                  scaling_kwargs=None):
         super(UNet, self).__init__()
         assert (len(channels) == len(skip_channels))
+        assert norm_type in ['group', 'batch']
         self.scales = len(channels)
         self.use_sigmoid = use_sigmoid
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
-        self.inc = InBlock(in_ch, channels[0], use_norm=use_norm)
+        self.inc = InBlock(in_ch, channels[0], use_norm=use_norm, norm_type=norm_type)
         for i in range(1, self.scales):
             self.down.append(DownBlock(in_ch=channels[i - 1],
                                        out_ch=channels[i],
-                                       use_norm=use_norm))
+                                       use_norm=use_norm, norm_type=norm_type))
         for i in range(1, self.scales):
             self.up.append(UpBlock(in_ch=channels[-i],
                                    out_ch=channels[-i - 1],
                                    skip_ch=skip_channels[-i],
-                                   use_norm=use_norm))
+                                   use_norm=use_norm, norm_type=norm_type))
         self.outc = OutBlock(in_ch=channels[0],
                              out_ch=out_ch)
         self.use_scale_in_layer = use_scale_in_layer
@@ -72,18 +73,18 @@ class UNet(nn.Module):
             return x
 
 class DownBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3, num_groups=4, use_norm=True):
+    def __init__(self, in_ch, out_ch, kernel_size=3, num_groups=4, use_norm=True, norm_type='group'):
         super(DownBlock, self).__init__()
         to_pad = int((kernel_size - 1) / 2)
         if use_norm:
             self.conv = nn.Sequential(
                 nn.Conv2d(in_ch, out_ch, kernel_size,
                           stride=2, padding=to_pad),
-                nn.GroupNorm(num_channels=out_ch, num_groups=num_groups),
+                (nn.GroupNorm(num_channels=out_ch, num_groups=num_groups) if norm_type == 'group' else nn.BatchNorm2d(num_features=out_ch)),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(out_ch, out_ch, kernel_size,
                           stride=1, padding=to_pad),
-                nn.GroupNorm(num_channels=out_ch, num_groups=num_groups),
+                (nn.GroupNorm(num_channels=out_ch, num_groups=num_groups) if norm_type == 'group' else nn.BatchNorm2d(num_features=out_ch)),
                 nn.LeakyReLU(0.2, inplace=True))
         else:
             self.conv = nn.Sequential(
@@ -100,14 +101,14 @@ class DownBlock(nn.Module):
 
 
 class InBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_size=3, num_groups=2, use_norm=True):
+    def __init__(self, in_ch, out_ch, kernel_size=3, num_groups=2, use_norm=True, norm_type='group'):
         super(InBlock, self).__init__()
         to_pad = int((kernel_size - 1) / 2)
         if use_norm:
             self.conv = nn.Sequential(
                 nn.Conv2d(in_ch, out_ch, kernel_size,
                           stride=1, padding=to_pad),
-                nn.GroupNorm(num_channels=out_ch, num_groups=num_groups),
+                (nn.GroupNorm(num_channels=out_ch, num_groups=num_groups) if norm_type == 'group' else nn.BatchNorm2d(num_features=out_ch)),
                 nn.LeakyReLU(0.2, inplace=True))
         else:
             self.conv = nn.Sequential(
@@ -121,7 +122,7 @@ class InBlock(nn.Module):
 
 
 class UpBlock(nn.Module):
-    def __init__(self, in_ch, out_ch, skip_ch=4, kernel_size=3, num_groups=2, use_norm=True):
+    def __init__(self, in_ch, out_ch, skip_ch=4, kernel_size=3, num_groups=2, use_norm=True, norm_type='group'):
         super(UpBlock, self).__init__()
         to_pad = int((kernel_size - 1) / 2)
         self.skip = skip_ch > 0
@@ -129,14 +130,14 @@ class UpBlock(nn.Module):
             skip_ch = 1
         if use_norm:
             self.conv = nn.Sequential(
-                nn.GroupNorm(num_channels=in_ch + skip_ch, num_groups=1), #LayerNorm
+                (nn.GroupNorm(num_channels=in_ch + skip_ch, num_groups=1) if norm_type == 'group' else nn.BatchNorm2d(num_features=in_ch + skip_ch)), #LayerNorm
                 nn.Conv2d(in_ch + skip_ch, out_ch, kernel_size, stride=1,
                           padding=to_pad),
-                nn.GroupNorm(num_channels=out_ch, num_groups=num_groups),
+                (nn.GroupNorm(num_channels=out_ch, num_groups=num_groups) if norm_type == 'group' else nn.BatchNorm2d(num_features=out_ch)),
                 nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(out_ch, out_ch, kernel_size,
                           stride=1, padding=to_pad),
-                nn.GroupNorm(num_channels=out_ch, num_groups=num_groups),
+                (nn.GroupNorm(num_channels=out_ch, num_groups=num_groups) if norm_type == 'group' else nn.BatchNorm2d(num_features=out_ch)),
                 nn.LeakyReLU(0.2, inplace=True))
         else:
             self.conv = nn.Sequential(
@@ -150,7 +151,7 @@ class UpBlock(nn.Module):
         if use_norm:
             self.skip_conv = nn.Sequential(
                 nn.Conv2d(out_ch, skip_ch, kernel_size=1, stride=1),
-                nn.GroupNorm(num_channels=skip_ch, num_groups=1), #LayerNorm
+                (nn.GroupNorm(num_channels=skip_ch, num_groups=1) if norm_type == 'group' else nn.BatchNorm2d(num_features=skip_ch)), #LayerNorm
                 nn.LeakyReLU(0.2, inplace=True))
         else:
             self.skip_conv = nn.Sequential(

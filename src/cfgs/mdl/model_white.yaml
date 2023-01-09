@@ -4,6 +4,7 @@ arch:
   channels: [128, 128, 128, 128, 128, 128]
   skip_channels: [0, 0, 0, 0, 4, 4]
   use_norm: True
+  norm_type: group
   use_sigmoid: False
   use_relu_out: null  # options: 'post' (applied on returned image)
 optim:
