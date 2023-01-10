@@ -97,23 +97,32 @@ def get_ray_trafos(name, cfg, return_torch_module=True):
         ray_trafos['smooth_pinv_ray_trafo'] = smooth_pinv_ray_trafo
 
         if return_torch_module:
+            # ray_trafos['ray_trafo_module'] = get_matrix_ray_trafo_module(
+            #         matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+            #         sparse=True)
             ray_trafos['ray_trafo_module'] = get_matrix_ray_trafo_module(
-                    matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
-                    sparse=True)
-            ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
-                    get_matrix_ray_trafo_module(
-                    matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
-                    sparse=True, adjoint=True), proj_shape,
-                    scaling_factor=cfg.fbp_scaling_factor,
-                    filter_type=cfg.fbp_filter_type,
-                    frequency_scaling=cfg.fbp_frequency_scaling)
-            ray_trafos['pinv_ray_trafo_module'] = get_matrix_fbp_module(
-                    get_matrix_ray_trafo_module(
-                    matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
-                    sparse=True, adjoint=True), proj_shape,
-                    scaling_factor=cfg.fbp_scaling_factor,
-                    filter_type='Ram-Lak',
-                    frequency_scaling=1.)
+                    matrix.todense(), (cfg.im_shape, cfg.im_shape), proj_shape,
+                    sparse=False)
+            # ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
+            #         get_matrix_ray_trafo_module(
+            #         matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+            #         sparse=True, adjoint=True), proj_shape,
+            #         scaling_factor=cfg.fbp_scaling_factor,
+            #         filter_type=cfg.fbp_filter_type,
+            #         frequency_scaling=cfg.fbp_frequency_scaling)
+            # ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
+            #         get_matrix_ray_trafo_module(
+            #         matrix.todense(), (cfg.im_shape, cfg.im_shape), proj_shape,
+            #         sparse=False, adjoint=True), proj_shape,
+            #         scaling_factor=cfg.fbp_scaling_factor,
+            #         filter_type=cfg.fbp_filter_type,
+            #         frequency_scaling=cfg.fbp_frequency_scaling)
+            import scipy
+            pinv_matrix = torch.from_numpy(scipy.linalg.pinv(matrix.todense()))
+            # pinv_matrix = torch.from_numpy(np.load('/home/jleuschn/phd/edip_extension/data/pinv_matrix_lotus_20.npy'))
+            from util.matrix_ray_trafo_torch import MatrixModule
+            ray_trafos['exact_pinv_ray_trafo_module'] = MatrixModule(pinv_matrix, out_shape=(cfg.im_shape, cfg.im_shape), sparse=False)
+            ray_trafos['smooth_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
 
     elif cfg.geometry_specs.impl == 'custom':
         custom_cfg = cfg.geometry_specs.ray_trafo_custom

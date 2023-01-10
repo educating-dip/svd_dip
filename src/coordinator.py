@@ -41,7 +41,7 @@ def coordinator(cfg : DictConfig) -> None:
                  }
     if cfg.mdl.optim.loss_function == 'mse_sure':
         ray_trafo['smooth_pinv_ray_trafo_module'] = ray_trafos['smooth_pinv_ray_trafo_module']
-        ray_trafo['pinv_ray_trafo_module'] = ray_trafos['pinv_ray_trafo_module']
+        ray_trafo['exact_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
 
     if cfg.torch_manual_seed_pretrain_init_model:
         torch.random.manual_seed(cfg.torch_manual_seed_pretrain_init_model)

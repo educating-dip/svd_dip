@@ -57,7 +57,8 @@ class FourierTransformModule(torch.nn.Module):
 
     def forward(self, x):
         x_preproc = self.preprocess(x)
-        y_nonpostproc = torch.rfft(x_preproc, 1)
+        y_nonpostproc = torch.fft.rfft(x_preproc, 1)
+        y_nonpostproc = torch.stack([y_nonpostproc.real, y_nonpostproc.imag], dim=-1)
         y = self.postprocess(y_nonpostproc)
         return y
 
@@ -89,7 +90,8 @@ class FourierTransformInverseModule(torch.nn.Module):
 
     def forward(self, y):
         y_preproc = self.preprocess(y)
-        x_nonpostproc = torch.irfft(
-            y_preproc, 1, signal_sizes=(self.signal_domain.shape[-1],))
+        y_preproc = torch.complex(y_preproc[..., 0], y_preproc[..., 1])
+        x_nonpostproc = torch.fft.irfft(
+            y_preproc, n=self.signal_domain.shape[-1])
         x = self.postprocess(x_nonpostproc)
         return x

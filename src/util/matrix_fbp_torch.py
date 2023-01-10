@@ -19,6 +19,8 @@ class FBPModule(torch.nn.Module):
         """
         super().__init__()
         self.adjoint_func = adjoint_func
+        from .fbp_torch import FBPFilterModule
+        # self.filter_op = FBPFilterModule(*args, **kwargs)
         self.filter_op = OperatorModule(get_fbp_filter_op(*args, **kwargs))
 
     def forward(self, y):

@@ -96,7 +96,7 @@ class DeepImagePriorReconstructor():
            https://doi.org/10.1088/1361-6420/aba415
     """
 
-    def __init__(self, ray_trafo_module, reco_space, observation_space, cfg, smooth_pinv_ray_trafo_module=None, pinv_ray_trafo_module=None):
+    def __init__(self, ray_trafo_module, reco_space, observation_space, cfg, smooth_pinv_ray_trafo_module=None, exact_pinv_ray_trafo_module=None):
 
         self.reco_space = reco_space
         self.observation_space = observation_space
@@ -104,7 +104,7 @@ class DeepImagePriorReconstructor():
         self.device = torch.device(('cuda:0' if torch.cuda.is_available() else 'cpu'))
         self.ray_trafo_module = ray_trafo_module.to(self.device)
         self.smooth_pinv_ray_trafo_module = smooth_pinv_ray_trafo_module.to(self.device) if smooth_pinv_ray_trafo_module is not None else None
-        self.pinv_ray_trafo_module = pinv_ray_trafo_module.to(self.device) if pinv_ray_trafo_module is not None else None
+        self.exact_pinv_ray_trafo_module = exact_pinv_ray_trafo_module.to(self.device) if exact_pinv_ray_trafo_module is not None else None
         self.init_model()
 
     def init_model(self):
@@ -299,8 +299,9 @@ class DeepImagePriorReconstructor():
                 with autocast() if self.cfg.use_mixed else contextlib.nullcontext():
                     output = self.apply_model_on_test_data(self.net_input)
                     output_y = self.ray_trafo_module(output)
-                    loss = criterion(output_y, y_delta) + self.cfg.optim.gamma * tv_loss_fun(output)
-                    if self.cfg.optim.loss_function == 'mse_sure':
+                    if self.cfg.optim.loss_function != 'mse_sure':
+                        loss = criterion(output_y, y_delta) + self.cfg.optim.gamma * tv_loss_fun(output)
+                    else:
                         if self.cfg.optim.mse_sure_sigma == 'from_ground_truth':
                             sigma_ = torch.sqrt(torch.mean((y_delta - self.ray_trafo_module(ground_truth.to(y_delta.device)))**2))
                         else:
@@ -319,47 +320,36 @@ class DeepImagePriorReconstructor():
                         fu = output
                         eps = self.cfg.optim.mse_sure_epsilon
                         sig2 = sigma_ ** 2
-                        N = y_delta.numel()
+                        N = fu.numel()
                         def P(x):
-                            return self.pinv_ray_trafo_module(self.ray_trafo_module(x))
+                            return self.exact_pinv_ray_trafo_module(self.ray_trafo_module(x))
                         def div_approx(f):
                             b = torch.randn_like(u)
                             m = b.mean()
                             c = torch.sqrt(torch.mean((b - m) ** 2))
                             b = (b - m) / c
-                            df = P(f(u + eps * b) - fu)
-                            N_eps = eps * N
-                            MC = torch.mean(torch.sum(b * df / N_eps, dim=(1, 2, 3)), dim=0)
+                            # df = P(f(u + eps * b) - fu)
+                            # N_eps = eps * N
+                            # MC = torch.mean(torch.sum(b * df / N_eps, dim=(1, 2, 3)), dim=0)
+                            from functorch import jvp
+                            _, MC = jvp(lambda x: torch.mean(torch.sum(b * P(f(x)) / N, dim=(1, 2, 3)), dim=0), (u,), (b,))
                             return MC
+                        # def div_approx(f):
+                        #     b = torch.randn_like(y_delta)
+                        #     m = b.mean()
+                        #     c = torch.sqrt(torch.mean((b - m) ** 2))
+                        #     b = (b - m) / c
+                        #     from functorch import jvp
+                        #     breakpoint()
+                        #     _, MC = jvp(lambda y: torch.mean(torch.sum(b * P(f(self.smooth_pinv_ray_trafo_module(y))) / N, dim=(1, 2, 3)), dim=0), (y_delta,), (b,))
+                        #     return MC
                         x_ML = fbp.to(fu.device)
                         c2 = torch.mean((P(fu)) ** 2)
                         c3 = sig2 * div_approx(self.apply_model_on_test_data)
                         c4 = torch.mean(x_ML * fu)
 
                         eta = c2 - 2 * c4 + 2 * c3
-                        loss = eta
-                        # u = self.net_input.detach().clone()
-                        # fu = output
-                        # eps = self.cfg.optim.mse_sure_epsilon
-                        # sig2 = sigma_ ** 2
-                        # N = y_delta.numel()
-                        # def P(x):
-                        #     return self.pinv_ray_trafo_module(self.ray_trafo_module(x))
-                        # def div_approx(f):
-                        #     b = torch.randn_like(u)
-                        #     m = b.mean()
-                        #     c = torch.sqrt(torch.mean((b - m) ** 2))
-                        #     b = (b - m) / c
-                        #     df = P(f(u + eps * b) - fu)
-                        #     N_eps = eps * N
-                        #     MC = torch.mean(torch.sum(b * df / N_eps, dim=(1, 2, 3)), dim=0)
-                        #     return MC
-                        # c3 = sig2 * div_approx(self.apply_model_on_test_data)
-
-                        # LS = self.ray_trafo_module(fu) - y_delta
-                        # l = torch.mean(HtH_dag_Ht(LS) ** 2)
-                        # eta = l + 2 * c3
-                        # loss = eta
+                        loss = eta + self.cfg.optim.gamma * tv_loss_fun(output)
 
                 if i in iterates_params_iters:
                     iterates_params.append(deepcopy(self.model.state_dict()))
@@ -369,7 +359,7 @@ class DeepImagePriorReconstructor():
                     scaler.unscale_(self.optimizer)
                 else:
                     loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.01)
                 if self.cfg.use_mixed:
                     scaler.step(self.optimizer)
                     scale = scaler.get_scale()

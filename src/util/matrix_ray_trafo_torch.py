@@ -35,12 +35,12 @@ class MatrixModule(nn.Module):
             Tensor of shape ``B x C x ...``.
         """
         inp_flat = inp.view(inp.shape[0] * inp.shape[1], -1)
+        inp_flat = inp_flat.transpose(1, 0)
         if self.sparse:
-            inp_flat = inp_flat.transpose(1, 0)
             out_flat = torch.sparse.mm(self.matrix, inp_flat)
-            out_flat = out_flat.transpose(1, 0)
         else:
             out_flat = torch.matmul(self.matrix, inp_flat)
+        out_flat = out_flat.transpose(1, 0)
         out = out_flat.view(inp.shape[0], inp.shape[1], *self.out_shape)
         return out
 
