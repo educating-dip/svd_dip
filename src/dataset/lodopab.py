@@ -16,8 +16,6 @@ class LoDoPaBGroundTruthDataset(GroundTruthDataset):
     def __init__(self, image_size=362, min_pt=(-0.13, -0.13), max_pt=(0.13, 0.13),
                  train_len=35820, validation_len=3522, test_len=3553):
 
-        assert LoDoPaBDataset is not None, 'dival.datasets.lodopab.LoDoPaBDataset could not be imported, but is required by LoDoPaBDataset'
-        self.dataset = LoDoPaBDataset(impl='astra_cpu')  # impl does not matter since we only use the images
         self.shape = (image_size, image_size)
         space = uniform_discr(min_pt, max_pt, self.shape, dtype=np.float32)
         self.train_len = train_len
@@ -26,5 +24,7 @@ class LoDoPaBGroundTruthDataset(GroundTruthDataset):
         super().__init__(space=space)
 
     def generator(self, fold='train'):
+        assert LoDoPaBDataset is not None, 'dival.datasets.lodopab.LoDoPaBDataset could not be imported, but is required by LoDoPaBDataset'
+        dataset = LoDoPaBDataset(impl='astra_cpu')  # impl does not matter since we only use the images
         for i in range(self.get_len(fold=fold)):
-            yield self.dataset.get_sample(i, part=fold, out=(False, True))[1]
+            yield dataset.get_sample(i, part=fold, out=(False, True))[1]
