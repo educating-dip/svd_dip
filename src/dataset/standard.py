@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import h5py
 from pydicom.filereader import dcmread
+import scipy
 from .ellipses import EllipsesDataset, DiskDistributedEllipsesDataset, DiskDistributedNoiseMasksDataset, EllipsoidsInBallDataset
 from .rectangles import RectanglesDataset
 from .pascal_voc import PascalVOCDataset
@@ -41,16 +42,28 @@ def load_ray_trafo_matrix(name, cfg):
                 'rectangles_lotus_20',
                 'pascal_voc_lotus_20']:
         matrix = lotus.get_ray_trafo_matrix(cfg.ray_trafo_filename)
+        return matrix
     # elif name == 'brain_walnut_120':  # currently useless as we can't use the
                                         # matrix impl for the walnut ray trafo,
                                         # because the filtering for FDK is not
                                         # implemented
     #     matrix = walnuts.get_masked_ray_trafo_matrix(cfg.ray_trafo_filename)
+    #     return matrix
     else:
         raise NotImplementedError
 
+def assemble_gaussian_blur_matrix(cfg):
+    x = np.zeros((cfg.im_shape, cfg.im_shape))
+    matrix = np.zeros(((cfg.im_shape * cfg.im_shape), (cfg.im_shape * cfg.im_shape)), dtype=np.float32)
+    for i in range(cfg.im_shape):
+        for j in range(cfg.im_shape):
+            x[i, j] = 1.
+            matrix[:, np.ravel_multi_index((i, j), (cfg.im_shape, cfg.im_shape))] = scipy.ndimage.gaussian_filter(
+                    x, 
+                    cfg.geometry_specs.kernel_size
+                    ).flatten()
+            x[i, j] = 0.
     return matrix
-
 
 def get_ray_trafos(name, cfg, return_torch_module=True):
     """
@@ -75,54 +88,96 @@ def get_ray_trafos(name, cfg, return_torch_module=True):
     ray_trafos = {}
 
     if cfg.geometry_specs.impl == 'matrix':
-        matrix = load_ray_trafo_matrix(name, cfg.geometry_specs)
-        proj_shape = (cfg.geometry_specs.num_angles,
-                      cfg.geometry_specs.num_det_pixels)
-        if 'angles_subsampling' in cfg.geometry_specs:
-            matrix = subsample_angles_ray_trafo_matrix(
-                    matrix, cfg.geometry_specs.angles_subsampling, proj_shape)
+    
+        if name not in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
+            matrix = load_ray_trafo_matrix(name, cfg.geometry_specs)
 
-        matrix_ray_trafo = MatrixRayTrafo(matrix,
-                im_shape=(cfg.im_shape, cfg.im_shape),
-                proj_shape=proj_shape)
+        if cfg.name == 'ellipses_lotus_gaussian_blurring':
+            
+            proj_shape = (cfg.im_shape, cfg.im_shape)
+            if cfg.geometry_specs.load_matrix_from_path is None: 
+                matrix = assemble_gaussian_blur_matrix(cfg)
+            else:
+                matrix = np.load(os.path.join(cfg.geometry_specs.load_matrix_from_path, 
+                    f'matrix_lotus_blur_{cfg.geometry_specs.kernel_size}.npy'))
 
-        ray_trafo = matrix_ray_trafo.apply
-        ray_trafos['ray_trafo'] = ray_trafo
+            matrix[np.diag_indices(matrix.shape[0])] += np.diag(np.abs(matrix)).mean() * cfg.geometry_specs.diag_reg
+            ray_trafo = lambda x: (matrix @ x.reshape(-1)).reshape((cfg.im_shape, cfg.im_shape)).astype(np.float32)
+            ray_trafos['ray_trafo'] = ray_trafo
+            U, S, Vh = scipy.linalg.svd(matrix)
+            pinv_matrix_np = Vh.T @ np.diag(S**-1) @ U.T
+            print(f'\n Gaussian Blur Matrix Condition Number: {np.max(S) / np.min(S)}\n')
+            exact_pinv_ray_trafo = lambda x: (pinv_matrix_np @ x.reshape(-1)).reshape((cfg.im_shape, cfg.im_shape)).astype(np.float32)
+            ray_trafos['smooth_pinv_ray_trafo'] = exact_pinv_ray_trafo
 
-        smooth_pinv_ray_trafo = FBP(
-                matrix_ray_trafo.apply_adjoint, proj_shape,
-                scaling_factor=cfg.fbp_scaling_factor,
-                filter_type=cfg.fbp_filter_type,
-                frequency_scaling=cfg.fbp_frequency_scaling).apply
-        ray_trafos['smooth_pinv_ray_trafo'] = smooth_pinv_ray_trafo
+            if return_torch_module:
+                ray_trafos['ray_trafo_module'] = get_matrix_ray_trafo_module(
+                        matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+                        sparse=False)
+                ray_trafos['ray_trafo_module_adjoint'] = get_matrix_ray_trafo_module(
+                        matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+                        adjoint=True, sparse=False)
 
-        if return_torch_module:
-            # ray_trafos['ray_trafo_module'] = get_matrix_ray_trafo_module(
-            #         matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
-            #         sparse=True)
-            ray_trafos['ray_trafo_module'] = get_matrix_ray_trafo_module(
-                    matrix.todense(), (cfg.im_shape, cfg.im_shape), proj_shape,
-                    sparse=False)
-            # ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
-            #         get_matrix_ray_trafo_module(
-            #         matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
-            #         sparse=True, adjoint=True), proj_shape,
-            #         scaling_factor=cfg.fbp_scaling_factor,
-            #         filter_type=cfg.fbp_filter_type,
-            #         frequency_scaling=cfg.fbp_frequency_scaling)
-            # ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
-            #         get_matrix_ray_trafo_module(
-            #         matrix.todense(), (cfg.im_shape, cfg.im_shape), proj_shape,
-            #         sparse=False, adjoint=True), proj_shape,
-            #         scaling_factor=cfg.fbp_scaling_factor,
-            #         filter_type=cfg.fbp_filter_type,
-            #         frequency_scaling=cfg.fbp_frequency_scaling)
-            import scipy
-            pinv_matrix = torch.from_numpy(scipy.linalg.pinv(matrix.todense()))
-            # pinv_matrix = torch.from_numpy(np.load('/home/jleuschn/phd/edip_extension/data/pinv_matrix_lotus_20.npy'))
-            from util.matrix_ray_trafo_torch import MatrixModule
-            ray_trafos['exact_pinv_ray_trafo_module'] = MatrixModule(pinv_matrix, out_shape=(cfg.im_shape, cfg.im_shape), sparse=False)
-            ray_trafos['smooth_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
+                from util.matrix_ray_trafo_torch import MatrixModule
+                pinv_matrix = torch.from_numpy(pinv_matrix_np)
+                ray_trafos['exact_pinv_ray_trafo_module'] = MatrixModule(pinv_matrix, out_shape=(cfg.im_shape, cfg.im_shape), sparse=False)
+                ray_trafos['smooth_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
+            
+        elif cfg.name == 'ellipses_lotus_gaussian_denoising':
+
+            class IdModule(torch.nn.Module):
+                def forward(self, x):
+                    return x
+
+            ray_trafos['ray_trafo'] = lambda x: x.astype(np.float32)
+            ray_trafos['smooth_pinv_ray_trafo'] = lambda x: x.astype(np.float32)
+            
+            ray_trafos['ray_trafo_module'] = torch.nn.Identity()
+            ray_trafos['ray_trafo_module_adjoint'] = torch.nn.Identity()
+            ray_trafos['exact_pinv_ray_trafo_module'] = torch.nn.Identity()
+            ray_trafos['smooth_pinv_ray_trafo_module'] = torch.nn.Identity()
+
+        else:
+            proj_shape = (cfg.geometry_specs.num_angles,
+                          cfg.geometry_specs.num_det_pixels)
+            if 'angles_subsampling' in cfg.geometry_specs:
+                matrix = subsample_angles_ray_trafo_matrix(
+                        matrix, cfg.geometry_specs.angles_subsampling, proj_shape)
+
+            matrix_ray_trafo = MatrixRayTrafo(matrix,
+                    im_shape=(cfg.im_shape, cfg.im_shape),
+                    proj_shape=proj_shape)
+
+            ray_trafo = matrix_ray_trafo.apply
+            ray_trafos['ray_trafo'] = ray_trafo
+            smooth_pinv_ray_trafo = FBP(
+                    matrix_ray_trafo.apply_adjoint, proj_shape,
+                    scaling_factor=cfg.fbp_scaling_factor,
+                    filter_type=cfg.fbp_filter_type,
+                    frequency_scaling=cfg.fbp_frequency_scaling).apply
+            ray_trafos['smooth_pinv_ray_trafo'] = smooth_pinv_ray_trafo
+        
+            if return_torch_module:
+                ray_trafos['ray_trafo_module'] = get_matrix_ray_trafo_module(
+                        matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+                        sparse=True)
+                ray_trafos['ray_trafo_module_adjoint'] = get_matrix_ray_trafo_module(
+                        matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+                        adjoint=True, sparse=False)
+                ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
+                        get_matrix_ray_trafo_module(
+                        matrix, (cfg.im_shape, cfg.im_shape), proj_shape,
+                        sparse=True, adjoint=True), proj_shape,
+                        scaling_factor=cfg.fbp_scaling_factor,
+                        filter_type=cfg.fbp_filter_type,
+                        frequency_scaling=cfg.fbp_frequency_scaling)
+                ray_trafos['smooth_pinv_ray_trafo_module'] = get_matrix_fbp_module(
+                        get_matrix_ray_trafo_module(
+                        matrix.todense(), (cfg.im_shape, cfg.im_shape), proj_shape,
+                        sparse=False, adjoint=True), proj_shape,
+                        scaling_factor=cfg.fbp_scaling_factor,
+                        filter_type=cfg.fbp_filter_type,
+                        frequency_scaling=cfg.fbp_frequency_scaling)
 
     elif cfg.geometry_specs.impl == 'custom':
         custom_cfg = cfg.geometry_specs.ray_trafo_custom
@@ -299,7 +354,7 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
                          'validation_len': cfg.validation_len, 'test_len': cfg.test_len}
         if name in ['ellipses_lotus_20', 'ellipses_lotus_limited_45']:
             image_dataset = EllipsesDataset(**dataset_specs, **image_dataset_kwargs)
-        elif name in ['rectangles_lotus_20']:
+        elif name in ['rectangles_lotus_20', 'ellipses_lotus_gaussian_blur_sure', 'ellipses_lotus_gaussian_denoising_sure']:
             image_dataset = RectanglesDataset(**dataset_specs, **image_dataset_kwargs)
         elif name in ['pascal_voc_lotus_20']:
             image_dataset = PascalVOCDataset(
@@ -319,6 +374,23 @@ def get_standard_dataset(name, cfg, return_ray_trafo_torch_module=True, **image_
         dataset = image_dataset.create_pair_dataset(ray_trafo=ray_trafo,
                 pinv_ray_trafo=smooth_pinv_ray_trafo,
                 domain=space, proj_space=proj_space,
+                noise_type=cfg.noise_specs.noise_type,
+                specs_kwargs=specs_kwargs,
+                noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
+                'test': cfg.seed + 2})
+    elif name in ['ellipses_lotus_gaussian_denoising', 'ellipses_lotus_gaussian_blurring']:
+        dataset_specs = {'image_size': cfg.im_shape, 'train_len': cfg.train_len,
+                         'validation_len': cfg.validation_len, 'test_len': cfg.test_len}
+        image_dataset = EllipsesDataset(**dataset_specs, **image_dataset_kwargs)
+        class space:
+            def __init__(self, im_shape): 
+                self.shape = (im_shape, im_shape)
+        class proj_space:
+            def __init__(self, im_shape): 
+                self.shape = (im_shape, im_shape)
+        dataset = image_dataset.create_pair_dataset(ray_trafo=ray_trafo,
+                pinv_ray_trafo=smooth_pinv_ray_trafo,
+                domain=space(cfg.im_shape), proj_space=proj_space(cfg.im_shape),
                 noise_type=cfg.noise_specs.noise_type,
                 specs_kwargs=specs_kwargs,
                 noise_seeds={'train': cfg.seed, 'validation': cfg.seed + 1,
@@ -564,20 +636,23 @@ def get_lotus_data(name, cfg):
     ray_trafos = get_ray_trafos(name, cfg,
                                 return_torch_module=False)
     smooth_pinv_ray_trafo = ray_trafos['smooth_pinv_ray_trafo']
-
-    sinogram = np.asarray(lotus.get_sinogram(
-                    cfg.geometry_specs.ray_trafo_filename))
-    if 'angles_subsampling' in cfg.geometry_specs:
-        sinogram = sinogram[cfg.geometry_specs.angles_subsampling.start:
-                            cfg.geometry_specs.angles_subsampling.stop:
-                            cfg.geometry_specs.angles_subsampling.step, :]
-
-    fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
-
     ground_truth = None
     if cfg.ground_truth_filename is not None:
         ground_truth = lotus.get_ground_truth(cfg.ground_truth_filename)
-
+        if name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
+            from skimage.transform import resize
+            ground_truth = resize(ground_truth, (cfg.im_shape, cfg.im_shape))
+    if name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
+        sinogram = ray_trafos['ray_trafo'](ground_truth)
+        sinogram += np.random.normal(size=sinogram.shape) * np.mean(sinogram) * cfg.noise_specs.stddev
+    else:
+        sinogram = np.asarray(lotus.get_sinogram(
+                        cfg.geometry_specs.ray_trafo_filename))
+        if 'angles_subsampling' in cfg.geometry_specs:
+            sinogram = sinogram[cfg.geometry_specs.angles_subsampling.start:
+                                cfg.geometry_specs.angles_subsampling.stop:
+                                cfg.geometry_specs.angles_subsampling.step, :]
+    fbp = np.asarray(smooth_pinv_ray_trafo(sinogram))
     return sinogram, fbp, ground_truth
 
 

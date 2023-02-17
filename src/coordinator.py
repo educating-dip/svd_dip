@@ -40,8 +40,12 @@ def coordinator(cfg : DictConfig) -> None:
                  'observation_space': dataset.space[0],
                  }
     if cfg.mdl.optim.loss_function == 'mse_sure':
+        ray_trafo['ray_trafo_module_adjoint'] = ray_trafos['ray_trafo_module_adjoint']
         ray_trafo['smooth_pinv_ray_trafo_module'] = ray_trafos['smooth_pinv_ray_trafo_module']
-        ray_trafo['exact_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
+        if cfg.data.name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
+            ray_trafo['exact_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
+        else:    
+            ray_trafo['exact_pinv_ray_trafo_module'] = ray_trafos['smooth_pinv_ray_trafo_module'] 
 
     if cfg.torch_manual_seed_pretrain_init_model:
         torch.random.manual_seed(cfg.torch_manual_seed_pretrain_init_model)

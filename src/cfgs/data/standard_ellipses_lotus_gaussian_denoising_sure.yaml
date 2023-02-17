@@ -1,0 +1,24 @@
+# @package _group_
+name: ellipses_lotus_gaussian_denoising
+validation_data: shepp_logan
+test_data: lotus
+im_shape: 128
+train_len: 32000
+validation_len: 3200
+test_len: 3200
+seed: 1
+geometry_specs:
+  impl: 'matrix'
+noise_specs:
+  noise_type: white
+  stddev: 0.1
+stats:
+  mean_fbp: 0.22491531595145353
+  std_fbp: 0.24280505434305219
+  mean_gt: 0.22401905693265145
+  std_gt: 0.22258047788033836
+implicit_scaling_except_for_test_data: 41.
+fbp_scaling_factor: 0.019221008882481495
+fbp_filter_type: 'Hann'
+fbp_frequency_scaling: 0.6
+ground_truth_filename: /localdata/jleuschn/data/FIPS_Lotus/TVGroundTruthLotus128.mat  # insert path to "TVGroundTruthLotus128.mat", download from: https://zenodo.org/record/5574587/files/TVGroundTruthLotus128.mat?download=1
