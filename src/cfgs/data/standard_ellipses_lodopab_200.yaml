@@ -6,7 +6,7 @@ im_shape: 362
 train_len: 32000
 validation_len: 3200
 test_len: 3200
-data_path_test: null  # insert path to lodopab dataset
+data_path_test: null  # insert path to lodopab dataset (download manually from https://zenodo.org/record/3384092, or use dival to download)
 data_part: 'test'
 sample_index: 9
 seed: 1

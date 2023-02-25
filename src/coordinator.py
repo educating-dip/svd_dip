@@ -1,5 +1,6 @@
 import hydra
 import os
+from warnings import warn
 import h5py
 import numpy as np
 from omegaconf import DictConfig
@@ -13,7 +14,12 @@ from copy import deepcopy
 @hydra.main(config_path='cfgs', config_name='config')
 def coordinator(cfg : DictConfig) -> None:
 
-    dataset, ray_trafos = get_standard_dataset(cfg.data.name, cfg.data)
+    return_modules_kwargs = {
+        'return_ray_trafo_torch_module_adjoint': (cfg.mdl.optim.loss_function == 'mse_sure'),
+        'return_ray_trafo_torch_module_pinv': ((cfg.pretraining and cfg.trn.use_adversarial_attacks) or cfg.mdl.optim.loss_function == 'mse_sure'),
+        }
+
+    dataset, ray_trafos = get_standard_dataset(cfg.data.name, cfg.data, **return_modules_kwargs)
 
     obs_shape = dataset.space[0].shape
     im_shape = dataset.space[1].shape
@@ -41,10 +47,10 @@ def coordinator(cfg : DictConfig) -> None:
                  }
     if cfg.mdl.optim.loss_function == 'mse_sure':
         ray_trafo['ray_trafo_module_adjoint'] = ray_trafos['ray_trafo_module_adjoint']
-        ray_trafo['smooth_pinv_ray_trafo_module'] = ray_trafos['smooth_pinv_ray_trafo_module']
-        if cfg.data.name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
+        try:
             ray_trafo['exact_pinv_ray_trafo_module'] = ray_trafos['exact_pinv_ray_trafo_module']
-        else:    
+        except KeyError:
+            warn('No "exact_pinv_ray_trafo_module" was defined for data "{}", will use "smooth_pinv_ray_trafo_module" for the "mse_sure" loss instead'.format(cfg.data.name))
             ray_trafo['exact_pinv_ray_trafo_module'] = ray_trafos['smooth_pinv_ray_trafo_module'] 
 
     if cfg.torch_manual_seed_pretrain_init_model:

@@ -16,7 +16,7 @@ def get_maml_datasets(datasets_cfg_list):
         for k, v in cfg.overrides.items():
             OmegaConf.update(data_cfg, k, v, merge=True)
         image_dataset_kwargs = OmegaConf.to_object(cfg.image_dataset_kwargs)
-        dataset, _ = get_standard_dataset(data_cfg.name, data_cfg, **image_dataset_kwargs)
+        dataset, _ = get_standard_dataset(data_cfg.name, data_cfg, return_ray_trafo_torch_module=False, **image_dataset_kwargs)
         datasets.append(dataset)
     return datasets
 
