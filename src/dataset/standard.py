@@ -644,8 +644,11 @@ def get_lotus_data(name, cfg):
     ground_truth = None
     if cfg.ground_truth_filename is not None:
         ground_truth = lotus.get_ground_truth(cfg.ground_truth_filename)
-        if name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
-            ground_truth = resize(ground_truth, (cfg.im_shape, cfg.im_shape))
+        if cfg.im_shape != ground_truth.shape[0]:
+            if name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
+                ground_truth = resize(ground_truth, (cfg.im_shape, cfg.im_shape))
+            else:
+                raise ValueError('Image resizing is not supported for data "{}"; ground truth has side length {}, but data.im_shape={} is requested'.format(name, ground_truth.shape[0], cfg.im_shape))
     if name in ['ellipses_lotus_gaussian_blurring', 'ellipses_lotus_gaussian_denoising']:
         sinogram = ray_trafos['ray_trafo'](ground_truth)
         sinogram += np.random.normal(size=sinogram.shape) * np.mean(sinogram) * cfg.noise_specs.stddev
