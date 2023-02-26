@@ -23,7 +23,7 @@ optim:
   loss_function: mse
   mse_sure_sigma: from_ground_truth
   mse_sure_epsilon: 1e-3
-  use_BP_variant: False
+  mse_sure_use_BP_variant: False
   gamma: 1e-4
   photons_per_pixel: null
   mu_max: null

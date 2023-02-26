@@ -333,7 +333,7 @@ class DeepImagePriorReconstructor():
 
                         x_ML = fbp.to(output.device)
                         c3 = sig2 * div_approx(self.apply_model_on_test_data)
-                        if not self.cfg.optim.use_BP_variant:
+                        if not self.cfg.optim.mse_sure_use_BP_variant:
                             c2 = torch.mean((P(output)) ** 2)
                             c4 = torch.mean(x_ML * output)
                             eta = c2 - 2 * c4 + 2 * c3
