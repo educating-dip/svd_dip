@@ -1,5 +1,17 @@
 # @package _group_
 arch:
+  use_svd_replacement: False
+  # it probably only makes sense to replace up and down layers.
+  svd_replace_inc: False
+  svd_replace_down: 6 # replaces the lowest (last) blocks first
+  svd_replace_up: 6   # replaces the lowest (first) blocks first
+  svd_replace_skip: False
+  svd_replace_outc: False
+
+  # svd_rank_frac and svd_cutoff_threshold are exclusive. If 0 <= svd_cutoff_threshold < 1, svd_rank_frac is ignored.
+  svd_cutoff_threshold: -1 # 0 <= svd_cutoff_threshold < 1.  All values <= svd_cutoff_threshold*maximum singular value are cut off. (0 leads to no cutoff). Also called "adaptive_threshold". Set outside of bounds to use svd_rank_frac.
+  svd_rank_frac: 1         # 0 < svd_rank_frac < 1. svd_rank_frac gives the portion of lowest SVs that are cut off, e.g. with svd_rank_frac=0.25, the bottom quarter of singular values are discarded. (Values >= 1 lead to no cutoff)
+
   scales: 6
   channels: [128, 128, 128, 128, 128, 128]
   skip_channels: [0, 0, 0, 0, 4, 4]

@@ -111,6 +111,7 @@ def coordinator(cfg : DictConfig) -> None:
                 torch.save(params,
                            os.path.join(cfg.save_iterates_params_path,
                                         'params_iters{:d}.pt'.format(iters)))
+        torch.save(reconstructor.model.state_dict(), 'params_end.pt')
 
 if __name__ == '__main__':
     coordinator()

@@ -16,6 +16,8 @@ from tqdm import tqdm
 from .network import UNet, UNet3D
 from .utils import poisson_loss, tv_loss, tv_loss_3d, PSNR, normalize, extract_learnable_params
 
+from .svd_replacement import get_svd_layer
+
 
 class LRPolicy():
     """
@@ -154,14 +156,33 @@ class DeepImagePriorReconstructor():
         else:
             raise ValueError
 
-        current_time = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
-        comment = 'DIP+TV'
-        if self.cfg.optim.loss_function == 'mse_sure':
-            comment += '_SURE'
-        logdir = os.path.join(
-            self.cfg.log_path,
-            current_time + '_' + socket.gethostname() + comment)
-        self.writer = tensorboardX.SummaryWriter(logdir=logdir)
+    def replace_model_by_svd_model(self):
+
+        if self.cfg.arch.svd_replace_inc:
+            self.model.inc.conv[0] = get_svd_layer(self.model.inc.conv[0], rank_frac=1, adaptive_threshold=-1)
+
+        if self.cfg.arch.svd_replace_down > 0:
+            counter = len(self.model.down)
+            for block in self.model.down:
+                if counter <= self.cfg.arch.svd_replace_down:
+                    block.conv[0] = get_svd_layer(block.conv[0], rank_frac=self.cfg.arch.svd_rank_frac, adaptive_threshold=self.cfg.arch.svd_cutoff_threshold)
+                    block.conv[3] = get_svd_layer(block.conv[3], rank_frac=self.cfg.arch.svd_rank_frac, adaptive_threshold=self.cfg.arch.svd_cutoff_threshold)
+                    counter = counter - 1
+
+        if self.cfg.arch.svd_replace_up > 0:
+            counter = 1
+            for block in self.model.up:
+                if counter <= self.cfg.arch.svd_replace_up:
+                    block.conv[1] = get_svd_layer(block.conv[1], rank_frac=self.cfg.arch.svd_rank_frac, adaptive_threshold=self.cfg.arch.svd_cutoff_threshold)
+                    block.conv[4] = get_svd_layer(block.conv[4], rank_frac=self.cfg.arch.svd_rank_frac, adaptive_threshold=self.cfg.arch.svd_cutoff_threshold)
+                    counter = counter + 1
+
+        if self.cfg.arch.svd_replace_skip:
+            for block in self.model.up:
+                block.skip_conv[0] = get_svd_layer(block.skip_conv[0], rank_frac=1, adaptive_threshold=-1)
+
+        if self.cfg.arch.svd_replace_outc:
+            self.model.outc.conv = get_svd_layer(self.model.outc.conv, rank_frac=1, adaptive_threshold=-1)
 
     def apply_model_on_test_data(self, net_input):
         test_scaling = self.cfg.get('implicit_scaling_except_for_test_data')
@@ -227,6 +248,22 @@ class DeepImagePriorReconstructor():
             Only provided if ``return_iterates_params=True``.
         """
 
+        current_time = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
+        comment = 'DIP+TV'
+        if self.cfg.optim.loss_function == 'mse_sure':
+            comment += '_SURE'
+        if self.cfg.arch.use_svd_replacement:
+            pretraining_string = 'P=' + ('Prt' if self.cfg.load_pretrain_model else 'Rnd')
+            if self.cfg.arch.svd_cutoff_threshold < 1 and self.cfg.arch.svd_cutoff_threshold >= 0:
+                rank_string = 'Cf=' + str(self.cfg.arch.svd_cutoff_threshold)
+            else:
+                rank_string = 'Rf=' + str(self.cfg.arch.svd_rank_frac)
+            comment += '_SVD_' + '_'.join([pretraining_string, 'D' + str(self.cfg.arch.svd_replace_down), 'U' + str(self.cfg.arch.svd_replace_up), rank_string])
+        logdir = os.path.join(
+            self.cfg.log_path,
+            current_time + '_' + socket.gethostname() + comment)
+        self.writer = tensorboardX.SummaryWriter(logdir=logdir)
+
         if self.cfg.torch_manual_seed:
             torch.random.manual_seed(self.cfg.torch_manual_seed)
 
@@ -238,6 +275,9 @@ class DeepImagePriorReconstructor():
             self.model.load_state_dict(torch.load(path, map_location=self.device))
         else:
             self.model.to(self.device)
+
+        if self.cfg.arch.use_svd_replacement:
+            self.replace_model_by_svd_model()
 
         self.model.train()
 
