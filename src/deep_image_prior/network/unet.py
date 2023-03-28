@@ -90,10 +90,10 @@ class DownBlock(nn.Module):
             self.conv = nn.Sequential(
                 nn.Conv2d(in_ch, out_ch, kernel_size,
                           stride=2, padding=to_pad),
-                nn.LeakyReLU(0.2, inplace=False),
+                nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(out_ch, out_ch, kernel_size,
                           stride=1, padding=to_pad),
-                nn.LeakyReLU(0.2, inplace=False))
+                nn.LeakyReLU(0.2, inplace=True))
 
     def forward(self, x):
         x = self.conv(x)
@@ -114,7 +114,7 @@ class InBlock(nn.Module):
             self.conv = nn.Sequential(
                 nn.Conv2d(in_ch, out_ch, kernel_size,
                           stride=1, padding=to_pad),
-                nn.LeakyReLU(0.2, inplace=False))
+                nn.LeakyReLU(0.2, inplace=True))
 
     def forward(self, x):
         x = self.conv(x)
@@ -143,10 +143,10 @@ class UpBlock(nn.Module):
             self.conv = nn.Sequential(
                 nn.Conv2d(in_ch + skip_ch, out_ch, kernel_size, stride=1,
                           padding=to_pad),
-                nn.LeakyReLU(0.2, inplace=False),
+                nn.LeakyReLU(0.2, inplace=True),
                 nn.Conv2d(out_ch, out_ch, kernel_size,
                           stride=1, padding=to_pad),
-                nn.LeakyReLU(0.2, inplace=False))
+                nn.LeakyReLU(0.2, inplace=True))
 
         if use_norm:
             self.skip_conv = nn.Sequential(
@@ -156,7 +156,7 @@ class UpBlock(nn.Module):
         else:
             self.skip_conv = nn.Sequential(
                 nn.Conv2d(out_ch, skip_ch, kernel_size=1, stride=1),
-                nn.LeakyReLU(0.2, inplace=False))
+                nn.LeakyReLU(0.2, inplace=True))
 
         self.up = nn.Upsample(scale_factor=2, mode='bilinear',
                               align_corners=True)
