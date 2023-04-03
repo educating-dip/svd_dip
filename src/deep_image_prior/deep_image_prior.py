@@ -341,6 +341,9 @@ class DeepImagePriorReconstructor():
         loss_avg_history = []
         last_lr_adaptation_iter = 0
 
+        self.writer.add_image('fbp', normalize(fbp[0, ...]).cpu().numpy(), 0)
+        self.writer.add_image('ground_truth', normalize(ground_truth[0, ...]).cpu().numpy(), 0)
+
         with tqdm(range(self.cfg.optim.iterations), desc='DIP', disable= not self.cfg.show_pbar) as pbar:
             for i in pbar:
                 self.optimizer.zero_grad()
