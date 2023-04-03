@@ -14,6 +14,7 @@ mdl:
   normalize_by_stats: False
   stats: ${data.stats}
   implicit_scaling_except_for_test_data: ${data.implicit_scaling_except_for_test_data}
+  explicit_scaling_for_test_data: ${data.explicit_scaling_for_test_data}
   optim:
     use_scheduler: False
     use_adaptive_lr: False

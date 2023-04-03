@@ -40,3 +40,4 @@ stats:
   mean_gt: 0.060739740575620219
   std_gt: 0.14634295758650837
 implicit_scaling_except_for_test_data: 14.
+explicit_scaling_for_test_data: 1.

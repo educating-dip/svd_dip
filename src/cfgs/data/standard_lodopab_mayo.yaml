@@ -21,5 +21,6 @@ noise_specs:
   photons_per_pixel: 4096
   mu_max: 81.35858
 implicit_scaling_except_for_test_data: 1.
+explicit_scaling_for_test_data: 1.
 fbp_filter_type: 'Hann'
 fbp_frequency_scaling: 1.

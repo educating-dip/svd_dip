@@ -24,6 +24,7 @@ noise_specs:
   noise_type: white
   stddev: 0.05
 implicit_scaling_except_for_test_data: 41.
+explicit_scaling_for_test_data: 1.
 fbp_scaling_factor: 0.019221008882481495
 fbp_filter_type: 'Hann'
 fbp_frequency_scaling: 0.6

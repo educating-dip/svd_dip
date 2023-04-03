@@ -248,6 +248,12 @@ class DeepImagePriorReconstructor():
             Only provided if ``return_iterates_params=True``.
         """
 
+        scaling = self.cfg.get('explicit_scaling_for_test_data', None) or 1.
+
+        noisy_observation = noisy_observation * scaling
+        fbp = fbp * scaling
+        ground_truth = ground_truth * scaling
+
         current_time = datetime.datetime.now().strftime('%b%d_%H-%M-%S')
         comment = 'DIP+TV'
         if self.cfg.optim.loss_function == 'mse_sure':
@@ -342,7 +348,7 @@ class DeepImagePriorReconstructor():
                     if self.cfg.optim.loss_function != 'mse_sure':
                         output = self.apply_model_on_test_data(self.net_input)
                         output_y = self.ray_trafo_module(output)
-                        loss = criterion(output_y, y_delta) + self.cfg.optim.gamma * tv_loss_fun(output)
+                        loss = criterion(output_y, y_delta) + scaling * self.cfg.optim.gamma * tv_loss_fun(output)
                     else:
                         if self.cfg.optim.mse_sure_sigma == 'from_ground_truth':
                             sigma_ = torch.sqrt(torch.mean((y_delta - self.ray_trafo_module(ground_truth.to(y_delta.device)))**2))
@@ -381,7 +387,7 @@ class DeepImagePriorReconstructor():
                             LS = self.ray_trafo_module(output) - y_delta
                             l = torch.mean(self.exact_pinv_ray_trafo_module(LS) ** 2)
                             eta = l + 2 * c3
-                        loss = eta + self.cfg.optim.gamma * tv_loss_fun(output)
+                        loss = eta + scaling * self.cfg.optim.gamma * tv_loss_fun(output)
 
                 if i in iterates_params_iters:
                     iterates_params.append(deepcopy(self.model.state_dict()))
@@ -456,6 +462,8 @@ class DeepImagePriorReconstructor():
         self.writer.close()
 
         out = best_output[0, 0, ...].cpu().numpy()
+
+        out = out / scaling
 
         optional_out = []
         if return_histories:

@@ -21,5 +21,6 @@ noise_specs:
   stddev: 0.05
 resimulate_with_noise_specs: False
 implicit_scaling_except_for_test_data: 1.
+explicit_scaling_for_test_data: 1.
 fbp_filter_type: 'Hann'
 fbp_frequency_scaling: 0.6
