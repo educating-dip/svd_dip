@@ -29,11 +29,17 @@ reconstruction:
         name: no_stats_no_sigmoid_train_run2_epochs100_fixed_encoder
       - run_path: multirun/2022-10-11/18-34-15/
         name: no_stats_no_sigmoid_adversarial_pretraining_epochs100
+      - run_path: outputs/2023-04-03/04-04-08/
+        name: no_stats_sigmoid_epochs20
+      - run_path: outputs/2023-04-03/04-31-38/
+        name: no_stats_sigmoid_epochs40
     no_pretrain:
       - run_path: multirun/2021-10-09/23-17-58/
         name: no_stats_no_sigmoid
       - run_path: multirun/2021-10-10/00-29-32/
         name: no_stats_no_sigmoid_fixed_encoder
+      - run_path: outputs/2023-04-03/03-46-01/
+        name: no_stats_sigmoid
     no_pretrain_fbp:
       - run_path: multirun/2021-10-09/23-19-29/
         name: no_stats_no_sigmoid
@@ -175,6 +181,8 @@ pretraining:
         name: no_stats_no_sigmoid_train_run2
       - run_path: multirun/2022-10-05/18-49-19/
         name: no_stats_no_sigmoid_adversarial_pretraining
+      - run_path: outputs/2023-04-02/14-29-48/
+        name: no_stats_sigmoid
   ellipses_lotus_limited_45:
     pretrain: # same as pretrain_only_fbp
       - run_path: multirun/2021-10-22/17-09-41/
