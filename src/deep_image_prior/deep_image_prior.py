@@ -400,7 +400,7 @@ class DeepImagePriorReconstructor():
                     scaler.unscale_(self.optimizer)
                 else:
                     loss.backward()
-                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.cfg.optim.clip_grad_max_norm)
                 if self.cfg.use_mixed:
                     scaler.step(self.optimizer)
                     scale = scaler.get_scale()

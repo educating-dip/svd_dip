@@ -37,6 +37,7 @@ optim:
   mse_sure_epsilon: 1e-3
   mse_sure_use_BP_variant: False
   gamma: 1e-4
+  clip_grad_max_norm: 1
   photons_per_pixel: null
   mu_max: null
   use_radam: False
