@@ -335,6 +335,9 @@ class DeepImagePriorReconstructor():
         loss_avg_history = []
         last_lr_adaptation_iter = 0
 
+        max_best_output_psnr = -np.inf
+        max_psnr_reco = None
+
         with tqdm(range(self.cfg.optim.iterations), desc='DIP', disable= not self.cfg.show_pbar) as pbar:
             for i in pbar:
                 self.optimizer.zero_grad()
@@ -441,6 +444,15 @@ class DeepImagePriorReconstructor():
                     pbar.set_postfix({'output_psnr': output_psnr})
                     self.writer.add_scalar('best_output_psnr', best_output_psnr, i)
                     self.writer.add_scalar('output_psnr', output_psnr, i)
+
+                    if best_output_psnr > max_best_output_psnr:
+                        max_best_output_psnr = best_output_psnr
+                        max_psnr_reco = output.detach().clone().cpu().numpy()
+                        max_psnr_iter = i
+                    if (i % 1000 == 0 or i + 1 == self.cfg.optim.iterations) and max_psnr_reco is not None:
+                        np.save('max_psnr_reco', max_psnr_reco)
+                        with open('max_psnr_iter.txt', 'w') as f:
+                            f.write(str(max_psnr_iter) + '\n')
 
                 self.writer.add_scalar('loss', loss.item(),  i)
                 if i in iterates_iters:
