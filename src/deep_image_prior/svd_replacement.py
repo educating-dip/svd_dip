@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 import numpy as np
-import tensorly as tl
-
+try:
+    from tensorly import truncated_svd
+except ImportError:
+    from tensorly import partial_svd as truncated_svd
 
 class SVD_Conv2d(nn.Module):
     def __init__(self, old_weight_data, in_channels, out_channels, kernel_size,
@@ -15,14 +17,14 @@ class SVD_Conv2d(nn.Module):
         
 
         if adaptive_threshold<1 and adaptive_threshold>0:
-            U, S, V = tl.truncated_svd(matrix.to('cpu').numpy(), max(int(min(matrix.shape)), 1)) 
+            U, S, V = truncated_svd(matrix.to('cpu').numpy(), max(int(min(matrix.shape)), 1)) 
             max_val = S[0]
             new_rank =  S.size - np.searchsorted(np.flip(S), max_val*adaptive_threshold, 'right')
         elif adaptive_threshold == 0:
             new_rank = max(int(min(matrix.shape)), 1)   
         else:
             new_rank = max(int(min(matrix.shape)*rank_frac), 1)  # rank frac is only used if adaptive threshold is outside bounds
-        U, S, V = tl.truncated_svd(matrix.to('cpu').numpy(), new_rank) 
+        U, S, V = truncated_svd(matrix.to('cpu').numpy(), new_rank) 
         U=torch.from_numpy(U.copy()).to(device)
         S=torch.from_numpy(S.copy()).to(device)
         V=torch.from_numpy(V.copy()).to(device)
