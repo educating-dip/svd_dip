@@ -36,5 +36,5 @@ stats:
   std_fbp: 0.28681643276996799  # FDK, actually
   mean_gt: 0.05702284884461551
   std_gt: 0.1458410655400523
-implicit_scaling_except_for_test_data: 14.
-explicit_scaling_for_test_data: 1.
+implicit_scaling_except_for_test_data: 1.
+explicit_scaling_for_test_data: 14.

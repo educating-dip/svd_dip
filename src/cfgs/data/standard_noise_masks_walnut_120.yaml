@@ -38,5 +38,5 @@ stats:
   std_fbp: null 
   mean_gt: null
   std_gt: null
-implicit_scaling_except_for_test_data: 14.
-explicit_scaling_for_test_data: 1.
+implicit_scaling_except_for_test_data: 1.
+explicit_scaling_for_test_data: 14.

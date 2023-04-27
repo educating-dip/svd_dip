@@ -27,8 +27,8 @@ stats:
   std_fbp: 0.28549086669364249
   mean_gt: 0.22401905693265145
   std_gt: 0.22258047788033836
-implicit_scaling_except_for_test_data: 41.
-explicit_scaling_for_test_data: 1.
+implicit_scaling_except_for_test_data: 1.
+explicit_scaling_for_test_data: 21.
 fbp_scaling_factor: 0.012645500784201912
 fbp_filter_type: 'Hann'
 fbp_frequency_scaling: 0.6

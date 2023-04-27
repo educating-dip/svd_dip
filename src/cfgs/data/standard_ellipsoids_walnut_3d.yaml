@@ -33,5 +33,5 @@ geometry_specs:
 noise_specs:
   noise_type: white
   stddev: 0.05
-implicit_scaling_except_for_test_data: 14.
-explicit_scaling_for_test_data: 1.
+implicit_scaling_except_for_test_data: 1.
+explicit_scaling_for_test_data: 14.
